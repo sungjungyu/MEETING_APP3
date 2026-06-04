@@ -27,6 +27,11 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 html {
   height: 100%;
   height: var(--app-height);
@@ -48,6 +53,7 @@ body {
   display: flex;
   flex-direction: column;
   width: 100%;
+  position: relative;
   max-width: 100%;
   height: 100%;
   height: var(--app-height);
@@ -173,6 +179,15 @@ body {
 #chatRoom.view.active {
   gap: 0;
   overflow: hidden;
+  padding: 0;
+  margin: 0;
+}
+
+#chatRoom.view.active .view-content {
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* 홈 */
@@ -765,6 +780,12 @@ textarea { min-height: 90px; resize: vertical; }
   margin-top: 14px;
   display: grid;
   gap: 10px;
+  width: 100%;
+  min-height: 320px;
+}
+
+.place-result-section[hidden] {
+  display: none !important;
 }
 
 .place-result-tabs {
@@ -795,10 +816,31 @@ textarea { min-height: 90px; resize: vertical; }
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
+/* 결과 패널 컨테이너 */
+.place-result-pane {
+  width: 100%;
+  height: 320px;
+  min-height: 320px;
+  position: relative;
+}
+
+.place-result-pane[hidden] {
+  display: none !important;
+}
+
 /* 지도 패널 */
 .place-map-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
   border-radius: 16px;
   overflow: hidden;
+  position: relative;
+}
+
+.place-map-panel > div {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .place-map-wrap {
@@ -809,8 +851,9 @@ textarea { min-height: 90px; resize: vertical; }
 }
 
 .place-map {
-  width: 100%;
-  height: 240px;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 320px;
   display: block;
 }
 
@@ -1254,16 +1297,21 @@ textarea { min-height: 90px; resize: vertical; }
   display: block;
 }
 
-/* 채팅방 */
+/* 채팅방 - 폰 화면 100% 꽉 차게 */
 .chat-panel {
   flex: 1 1 auto;
   min-height: 0;
+  width: 100%;
+  height: 100%;
   background: var(--card);
-  border-radius: var(--radius);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+  position: relative;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+  padding: 0;
 }
 
 .chat-head {
@@ -1295,7 +1343,8 @@ textarea { min-height: 90px; resize: vertical; }
   flex-direction: column;
   gap: 10px;
   overflow-y: auto;
-  background: #f1f5f9;
+  background: var(--soft);
+  width: 100%;
 }
 
 .chat-messages::-webkit-scrollbar { display: none; }
@@ -1337,36 +1386,54 @@ textarea { min-height: 90px; resize: vertical; }
   box-shadow: 0 2px 8px rgba(99,102,241,0.3);
 }
 
+.chat-time {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  display: block;
+  padding-left: 4px;
+}
+
+.chat-bubble.mine .chat-time {
+  text-align: right;
+  padding-right: 4px;
+  padding-left: 0;
+}
+
 .chat-form {
   flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
   border-top: 1px solid var(--line);
   background: var(--card);
 }
 
 .chat-form input {
+  flex: 1;
   border-radius: 999px;
-  padding: 10px 16px;
+  padding: 12px 18px;
   font-size: 14px;
   background: var(--soft);
+  border: none;
 }
 
-.chat-form button {
-  width: 44px;
-  height: 44px;
+.chat-form button[type="submit"] {
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: #fff;
-  font-size: 18px;
+  font-size: 20px;
   display: grid;
   place-items: center;
   box-shadow: 0 2px 8px rgba(99,102,241,0.3);
+  flex-shrink: 0;
 }
 
-.chat-form button::after { content: "↑"; }
+/* 전송 버튼 화살표 */
+.chat-form button[type="submit"]::after { content: "↑"; }
 .chat-form button > * { display: none; }
 
 /* 프로필 */
@@ -1593,4 +1660,694 @@ label:has(#interest3Select) {
 #signupInterest2Select,
 #signupInterest3Select {
   color: var(--sub);
+}
+
+/* ============================================
+   채팅방 AI 장소 추천 UI 스타일
+   ============================================ */
+
+/* 채팅방 헤더 액션 */
+.chat-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ai-recommend-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: linear-gradient(135deg, var(--primary) 0%, #818cf8 100%);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.ai-recommend-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.ai-recommend-btn svg {
+  stroke: #fff;
+}
+
+/* 채팅 입력창 + 버튼 */
+.chat-plus-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--sub);
+  border: none;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.chat-plus-btn:hover {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+/* + 버튼 메뉴 팝업 - 채팅 입력창 기준 */
+.chat-plus-menu {
+  position: absolute;
+  bottom: 60px;
+  left: 12px;
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  padding: 8px;
+  z-index: 100;
+  animation: slideUpMenu 0.2s ease-out;
+  max-width: calc(100% - 24px);
+}
+
+@keyframes slideUpMenu {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.plus-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: all 0.15s;
+}
+
+.plus-menu-item:hover {
+  background: var(--soft);
+}
+
+.plus-menu-item svg {
+  color: var(--primary);
+}
+
+/* AI 추천 모달 - 폰 화면 내에서만 표시 */
+.ai-recommend-modal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.ai-recommend-modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ai-recommend-modal-content {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  max-height: 85%;
+  background: var(--card);
+  border-radius: 24px 24px 0 0;
+  overflow: hidden;
+  animation: slideUpModal 0.3s ease-out;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes slideUpModal {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.ai-recommend-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+
+.ai-recommend-modal-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
+.ai-recommend-modal-header h3 svg {
+  color: var(--primary);
+}
+
+.modal-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--sub);
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 0.2s;
+}
+
+.modal-close-btn:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.ai-recommend-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+/* 채팅방 내 지도 */
+.chat-map-section {
+  margin-bottom: 16px;
+}
+
+.chat-map-panel {
+  width: 100%;
+  height: 240px;
+  min-height: 240px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--soft);
+  position: relative;
+}
+
+.chat-map-panel > div {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.map-loading {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--sub);
+  font-size: 14px;
+}
+
+.map-loading .spin {
+  animation: spin 1s linear infinite;
+}
+
+/* 추천 장소 목록 섹션 */
+.chat-recommend-list-section {
+  padding: 0 4px;
+}
+
+.chat-recommend-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.chat-recommend-list-header h4 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--soft);
+  color: var(--sub);
+  border: none;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.refresh-btn:hover {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.chat-recommend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 35vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.recommend-placeholder {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--sub);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 추천 장소 카드 */
+.chat-place-card {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  background: var(--soft);
+  border-radius: 14px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.chat-place-card:hover {
+  background: var(--card);
+  border-color: var(--line);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+.chat-place-card.selected {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.chat-place-card .place-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.chat-place-card .place-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-place-card .place-name {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.chat-place-card .place-address {
+  font-size: 12px;
+  color: var(--sub);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-place-card .place-desc {
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.chat-place-card .place-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.chat-place-card .place-feature {
+  padding: 3px 8px;
+  background: var(--card);
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--sub);
+}
+
+/* 카드 액션 버튼 영역 */
+.chat-place-card .card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.card-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.card-action-btn.share {
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.card-action-btn.share:hover {
+  background: var(--soft);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.card-action-btn.confirm {
+  background: var(--primary);
+  color: #fff;
+}
+
+.card-action-btn.confirm:hover {
+  background: #4f46e5;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+/* 채팅 메시지 - AI 추천 카드 */
+.chat-bubble.ai-recommend {
+  background: linear-gradient(135deg, var(--primary-light) 0%, #e0e7ff 100%);
+  border: 1.5px solid var(--primary);
+}
+
+.chat-bubble.ai-recommend .ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.chat-bubble.ai-recommend .place-share-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.chat-bubble.ai-recommend .place-share-card .place-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.chat-bubble.ai-recommend .place-share-card .place-address {
+  font-size: 13px;
+  color: var(--sub);
+  margin-bottom: 8px;
+}
+
+.chat-bubble.ai-recommend .place-share-card .confirm-hint {
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* 확정 메시지 */
+.chat-bubble.system-message {
+  background: var(--soft);
+  border: 1px dashed var(--line);
+  text-align: center;
+  padding: 12px 16px;
+}
+
+.chat-bubble.system-message p {
+  color: var(--sub);
+  font-size: 13px;
+  margin: 0;
+}
+
+/* 반응형 - 폰 화면 내에서만 동작 */
+@media (max-width: 393px) {
+  .ai-recommend-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  
+  .ai-recommend-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+  
+  .chat-map-panel {
+    height: 200px;
+    min-height: 200px;
+  }
+  
+  .chat-recommend-list {
+    max-height: 30vh;
+  }
+  
+  .ai-recommend-modal-content {
+    max-height: 80%;
+  }
+}
+
+/* ============================================
+   장소 확정 컨펌 모달
+   ============================================ */
+
+.place-confirm-modal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.place-confirm-modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.6);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.place-confirm-modal-content {
+  position: relative;
+  width: 80%;
+  max-width: 280px;
+  background: var(--card);
+  border-radius: 20px;
+  padding: 24px 20px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  animation: scaleIn 0.2s ease-out;
+  z-index: 1;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.place-confirm-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+
+.place-confirm-modal-content h4 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 8px 0;
+}
+
+.place-confirm-modal-content p {
+  font-size: 14px;
+  color: var(--sub);
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+
+.place-confirm-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.place-confirm-btn {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.place-confirm-btn.cancel {
+  background: var(--soft);
+  color: var(--sub);
+}
+
+.place-confirm-btn.cancel:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.place-confirm-btn.ok {
+  background: var(--primary);
+  color: #fff;
+}
+
+.place-confirm-btn.ok:hover {
+  background: #4f46e5;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+/* ============================================
+   공통 알림 모달 (alert 대체)
+   ============================================ */
+
+.app-alert-modal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-alert-modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.6);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.app-alert-modal-content {
+  position: relative;
+  width: 75%;
+  max-width: 260px;
+  background: var(--card);
+  border-radius: 20px;
+  padding: 24px 20px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  animation: scaleIn 0.2s ease-out;
+  z-index: 1;
+}
+
+.app-alert-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+.app-alert-modal-content h4 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 12px 0;
+}
+
+.app-alert-modal-content p {
+  font-size: 14px;
+  color: var(--sub);
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+
+.app-alert-btn {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  transition: all 0.2s;
+}
+
+.app-alert-btn:hover {
+  background: #4f46e5;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
 }

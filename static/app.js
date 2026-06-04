@@ -1,3 +1,14 @@
+// 시간 포맷팅 유틸리티
+function formatTime(dateStr) {
+  if (!dateStr) return "";
+  const date = new Date(dateStr);
+  // 한국 시간으로 변환
+  const koreaTime = new Date(date.getTime() + (9 * 60 * 60 * 1000));
+  const hours = String(koreaTime.getUTCHours()).padStart(2, '0');
+  const minutes = String(koreaTime.getUTCMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
 const tokenKey = "meeting_app_token";
 const views = document.querySelectorAll(".view");
 const viewTriggers = document.querySelectorAll("[data-view]");
@@ -153,22 +164,15 @@ function meetingMatchesRegion(meeting) {
     return true; // 지역 미설정시 모든 모임 표시
   }
   
-  // 모임 위치에서 지역 추출 (예: "대전광역시 서구 둔산동 카페" → "대전 서구")
-  const meetingLocation = meeting.location || "";
+  const meetingLocation = (meeting.location || "").toLowerCase();
+  const userRegionLower = userRegion.toLowerCase();
   
   // 사용자 지역이 모임 위치에 포함되는지 확인
-  // 예: 사용자 "대전 서구"가 모임 "대전광역시 서구 둔산동"에 포함되는지
-  const userParts = userRegion.split(" ");
-  const userProvince = userParts[0]; // "대전"
-  const userCity = userParts.slice(1).join(" "); // "서구"
+  // 예: "대전 서구" → "대전"과 "서구" 모두 포함되는지 체크
+  const userParts = userRegionLower.split(" ");
   
-  // 모임 위치에 도/시가 모두 포함되는지 확인
-  const locationLower = meetingLocation.toLowerCase();
-  const provinceMatch = locationLower.includes(userProvince.toLowerCase()) ||
-                        locationLower.includes(getFullProvinceName(userProvince).toLowerCase());
-  const cityMatch = userCity ? locationLower.includes(userCity.toLowerCase()) : true;
-  
-  return provinceMatch && cityMatch;
+  // 모든 사용자 지역 키워드가 모임 위치에 포함되어야 함
+  return userParts.every(part => meetingLocation.includes(part));
 }
 
 // 짧은 지역명을 전체 명칭으로 변환
@@ -341,6 +345,9 @@ async function renderPlaceMap(places) {
   if (!places.length) return;
 
   try {
+    // 로딩 표시
+    placeMapPanel.innerHTML = '<div class="map-empty" style="padding:40px;text-align:center;color:var(--sub);"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite;display:block;margin:0 auto 10px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>카카오맵을 불러오는 중...</div>';
+    
     // 카카오맵 SDK 로딩 (타임아웃 5초)
     const hasSdk = await Promise.race([
       loadKakaoMapSdk(),
@@ -357,6 +364,9 @@ async function renderPlaceMap(places) {
         <div class="place-map-overlay-tabs" id="placeMapTabs"></div>
       </div>
     `;
+    
+    // DOM이 반영될 시간을 주기 위해 requestAnimationFrame 사용
+    await new Promise(resolve => requestAnimationFrame(resolve));
     const bounds = new window.kakao.maps.LatLngBounds();
     placeMap = new window.kakao.maps.Map(document.querySelector("#placeMap"), {
       center: new window.kakao.maps.LatLng(places[0].latitude, places[0].longitude),
@@ -420,10 +430,21 @@ async function renderPlaceMap(places) {
     if (places.length > 1) {
       placeMap.setBounds(bounds, 60, 60, 60, 60);
     }
-    window.setTimeout(() => {
-      window.kakao.maps.event.trigger(placeMap, "resize");
-      focusPlaceOnMap(places[0], 0);
-    }, 100);
+    
+    // 지도 초기화 후 크기 재조정 (여러 단계로 안정성 확보)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (placeMap && window.kakao?.maps) {
+            placeMap.relayout();
+            const center = placeMap.getCenter();
+            placeMap.setCenter(center);
+            window.kakao.maps.event.trigger(placeMap, "resize");
+            focusPlaceOnMap(places[0], 0);
+          }
+        }, 200);
+      });
+    });
   } catch (err) {
     placeMapPanel.innerHTML = `<div class="map-empty" style="padding:40px;text-align:center;color:var(--sub);">카카오맵을 불러오지 못했습니다.<br>${err.message}</div>`;
   }
@@ -682,9 +703,8 @@ function renderMeetings(meetings) {
 }
 
 function renderMeetingPage(meetings) {
-  const filteredMeetings = filterMeetingsByRegion(meetings);
-  meetingPageList.innerHTML = filteredMeetings.length
-    ? filteredMeetings.map((meeting, index) => meetingCard(meeting, index, true)).join("")
+  meetingPageList.innerHTML = meetings.length
+    ? meetings.map((meeting, index) => meetingCard(meeting, index, true)).join("")
     : emptyCard("탐색할 모임이 없습니다.", "새 모임을 만들면 이곳에 카드로 표시됩니다.");
   bindMeetingCards();
 }
@@ -1470,10 +1490,11 @@ async function loadCalendar() {
   }
 }
 
-function addChatMessage(sender, content, mine = false) {
+function addChatMessage(sender, content, mine = false, time = null) {
   const bubble = document.createElement("div");
   bubble.className = `chat-bubble ${mine ? "mine" : ""}`;
-  bubble.innerHTML = `<strong>${sender}</strong><p>${content}</p>`;
+  const timeStr = time ? formatTime(time) : formatTime(new Date());
+  bubble.innerHTML = `<strong>${sender}</strong><p>${content}</p><span class="chat-time">${timeStr}</span>`;
   chatMessages.appendChild(bubble);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -1487,6 +1508,7 @@ async function loadChatHistory(roomId) {
         message.sender?.name || "참여자",
         message.content,
         currentUser?.id === message.sender?.id,
+        message.sent_at || message.created_at
       );
     });
   } catch {
@@ -1516,7 +1538,7 @@ async function connectChat(roomId) {
   });
   chatSocket.addEventListener("message", (event) => {
     const payload = JSON.parse(event.data);
-    addChatMessage(payload.sender || "참여자", payload.content || "", payload.sender === currentUser?.name);
+    addChatMessage(payload.sender || "참여자", payload.content || "", payload.sender === currentUser?.name, payload.sent_at);
   });
   chatSocket.addEventListener("close", () => {
     chatState.textContent = "연결 종료";
@@ -1586,25 +1608,30 @@ document.querySelector("#signupForm").addEventListener("submit", async (event) =
   }
 });
 
-document.querySelector("#loginForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const form = new FormData(event.currentTarget);
-  const status = document.querySelector("#authStatus");
-  try {
-    const data = await api("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({
-        email: form.get("email"),
-        password: form.get("password"),
-      }),
+document.addEventListener("DOMContentLoaded", () => {
+  const loginForm = document.querySelector("#loginForm");
+  if (loginForm) {
+    loginForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const status = document.querySelector("#authStatus");
+      try {
+        const data = await api("/api/auth/login", {
+          method: "POST",
+          body: JSON.stringify({
+            email: form.get("email"),
+            password: form.get("password"),
+          }),
+        });
+        localStorage.setItem(tokenKey, data.access_token);
+        currentUser = await api("/api/users/me");
+        status.textContent = "로그인되었습니다. 홈 화면으로 이동합니다...";
+        // 홈 화면으로 새로고침
+        window.location.href = "/";
+      } catch (error) {
+        status.textContent = error.message;
+      }
     });
-    localStorage.setItem(tokenKey, data.access_token);
-    currentUser = await api("/api/users/me");
-    status.textContent = "로그인되었습니다. 홈 화면으로 이동합니다...";
-    // 홈 화면으로 새로고침
-    window.location.href = "/";
-  } catch (error) {
-    status.textContent = error.message;
   }
 });
 
@@ -1623,8 +1650,29 @@ document.querySelectorAll(".place-result-tab[data-result-tab]").forEach((tab) =>
     } else {
       if (listPane) listPane.hidden = true;
       if (mapPane) mapPane.hidden = false;
-      if (placeMap) {
-        window.setTimeout(() => window.kakao?.maps?.event?.trigger(placeMap, "resize"), 50);
+      // 지도 탭 클릭 후 CSS가 완전히 반영된 후 relayout 실행
+      if (placeMap && window.kakao?.maps) {
+        // 브라우저가 컨테이너를 먼저 렌더링하도록 두 번의 requestAnimationFrame 사용
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setTimeout(function() {
+              if (placeMap && window.kakao?.maps) {
+                // 컨테이너 크기 재조정
+                placeMap.relayout();
+                // 현재 선택된 장소 좌표로 중심 재설정
+                const activeTab = document.querySelector("#placeMapTabs .active");
+                const activeIndex = activeTab ? parseInt(activeTab.dataset.mapTabIndex || 0) : 0;
+                const place = placeMapPlaces[activeIndex];
+                if (place) {
+                  const coords = new window.kakao.maps.LatLng(place.latitude, place.longitude);
+                  placeMap.setCenter(coords);
+                }
+                // resize 이벤트 트리거로 추가 안정화
+                window.kakao.maps.event.trigger(placeMap, 'resize');
+              }
+            }, 300);
+          });
+        });
       }
     }
   });
@@ -1782,3 +1830,553 @@ restoreSession();
 renderCalendarGrid();
 
 document.querySelector("#backButton").style.visibility = "hidden";
+
+// ============================================
+// 채팅방 AI 장소 추천 기능
+// ============================================
+
+let chatRecommendMap = null;
+let chatRecommendMarkers = [];
+let chatRecommendInfoWindows = [];
+let chatRecommendPlaces = [];
+let currentMeetingInfo = null;
+
+// DOM 요소
+const aiRecommendModal = document.querySelector("#aiRecommendModal");
+const aiRecommendButton = document.querySelector("#aiRecommendButton");
+const closeAiRecommendModal = document.querySelector("#closeAiRecommendModal");
+const chatRecommendMapPanel = document.querySelector("#chatRecommendMapPanel");
+const chatRecommendList = document.querySelector("#chatRecommendList");
+const chatPlusButton = document.querySelector("#chatPlusButton");
+const chatPlusMenu = document.querySelector("#chatPlusMenu");
+const plusMenuRecommend = document.querySelector("#plusMenuRecommend");
+
+// AI 추천 버튼 클릭
+aiRecommendButton?.addEventListener("click", () => {
+  openAiRecommendModal();
+});
+
+// + 버튼 클릭
+chatPlusButton?.addEventListener("click", () => {
+  chatPlusMenu.style.display = chatPlusMenu.style.display === "none" ? "block" : "none";
+});
+
+// + 메뉴 - AI 추천 클릭
+plusMenuRecommend?.addEventListener("click", () => {
+  chatPlusMenu.style.display = "none";
+  openAiRecommendModal();
+});
+
+// 모달 닫기
+closeAiRecommendModal?.addEventListener("click", () => {
+  closeAiRecommendModalFn();
+});
+
+// 모달 백드롭 클릭
+aiRecommendModal?.querySelector(".ai-recommend-modal-backdrop")?.addEventListener("click", () => {
+  closeAiRecommendModalFn();
+});
+
+
+// 모달 열기
+async function openAiRecommendModal() {
+  if (!activeRoomId) {
+    alert("채팅방에 먼저 입장해주세요.");
+    return;
+  }
+  
+  aiRecommendModal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+  
+  // 모임 정보 로드
+  await loadMeetingInfo();
+  
+  // 추천 로드
+  await loadAiRecommendations();
+}
+
+// 모달 닫기
+function closeAiRecommendModalFn() {
+  aiRecommendModal.style.display = "none";
+  document.body.style.overflow = "";
+  clearChatRecommendMap();
+}
+
+// 모임 정보 로드
+async function loadMeetingInfo() {
+  try {
+    currentMeetingInfo = await api(`/api/meetings/${activeRoomId}/info`);
+  } catch (error) {
+    console.error("모임 정보 로드 실패:", error);
+    currentMeetingInfo = null;
+  }
+}
+
+// AI 추천 로드
+async function loadAiRecommendations() {
+  if (!currentMeetingInfo) {
+    chatRecommendList.innerHTML = '<div class="recommend-placeholder">모임 정보를 불러올 수 없습니다.</div>';
+    return;
+  }
+  
+  // 로딩 표시
+  chatRecommendList.innerHTML = `
+    <div class="recommend-placeholder">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spin" style="animation:spin 1s linear infinite;display:block;margin:0 auto 10px;">
+        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+      </svg>
+      AI가 장소를 추천하는 중...
+    </div>
+  `;
+  
+  // 지도 초기화
+  initChatRecommendMap();
+  
+  try {
+    const places = await api(`/api/place-recommendations/chatroom-recommend`, {
+      method: "POST",
+      body: JSON.stringify({
+        meeting_id: activeRoomId,
+        meeting_title: currentMeetingInfo.title,
+        meeting_category: currentMeetingInfo.category,
+        meeting_description: currentMeetingInfo.description,
+        meeting_location: currentMeetingInfo.location,
+        keywords: currentMeetingInfo.keywords || [],
+        limit: Math.floor(Math.random() * 6) + 5, // 5~10개 랜덤
+      }),
+    });
+
+    chatRecommendPlaces = places;
+    renderChatRecommendList(places);
+    renderChatRecommendMarkers(places);
+    
+  } catch (error) {
+    chatRecommendList.innerHTML = `<div class="recommend-placeholder">추천 장소를 불러올 수 없습니다.<br>${error.message}</div>`;
+  }
+}
+
+// 지도 초기화
+async function initChatRecommendMap() {
+  clearChatRecommendMap();
+  
+  chatRecommendMapPanel.innerHTML = `
+    <div class="map-loading">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spin">
+        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+      </svg>
+      <span>지도를 불러오는 중...</span>
+    </div>
+  `;
+  
+  try {
+    const hasSdk = await Promise.race([
+      loadKakaoMapSdk(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("카카오맵 SDK 로딩 시간 초과")), 5000))
+    ]);
+    
+    if (!hasSdk) {
+      chatRecommendMapPanel.innerHTML = '<div class="map-loading">카카오맵 API 키가 설정되지 않았습니다.</div>';
+      return;
+    }
+    
+    // 모임 장소 좌표 검색
+    const coords = await searchAddressCoords(currentMeetingInfo?.location || "서울");
+    
+    chatRecommendMapPanel.innerHTML = '<div id="chatRecommendMap" style="width:100%;height:100%;"></div>';
+    
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    
+    const mapContainer = document.querySelector("#chatRecommendMap");
+    chatRecommendMap = new window.kakao.maps.Map(mapContainer, {
+      center: new window.kakao.maps.LatLng(coords.lat, coords.lng),
+      level: 5,
+    });
+    
+    // relayout 타이밍
+    setTimeout(() => {
+      if (chatRecommendMap && window.kakao?.maps) {
+        chatRecommendMap.relayout();
+        chatRecommendMap.setCenter(new window.kakao.maps.LatLng(coords.lat, coords.lng));
+      }
+    }, 200);
+    
+  } catch (err) {
+    chatRecommendMapPanel.innerHTML = `<div class="map-loading">지도를 불러오지 못했습니다.<br>${err.message}</div>`;
+  }
+}
+
+// 주소로 좌표 검색 - 모임 지역 기반
+async function searchAddressCoords(address) {
+  // 모임 지역 정보에서 기본 좌표 결정
+  const locationStr = currentMeetingInfo?.location || "";
+  const isDaejeon = locationStr.includes("대전");
+  const defaultCoords = isDaejeon 
+    ? { lat: 36.3504, lng: 127.3845 } // 대전 중심
+    : { lat: 37.5665, lng: 126.9780 }; // 서울시청
+  
+  try {
+    const config = await loadKakaoMapConfig();
+    if (!config.javascript_key) return defaultCoords;
+    
+    // 주소 검색 (키워드보다 정확한 주소 검색 사용)
+    const response = await fetch(
+      `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(address)}&size=1`,
+      {
+        headers: { Authorization: `KakaoAK ${config.javascript_key.replace(/_js$/, '')}` }
+      }
+    );
+    
+    if (!response.ok) throw new Error("검색 실패");
+    
+    const data = await response.json();
+    if (data.documents && data.documents.length > 0) {
+      return {
+        lat: parseFloat(data.documents[0].y),
+        lng: parseFloat(data.documents[0].x)
+      };
+    }
+    
+    // 주소 검색 실패 시 키워드 검색 시도
+    const keywordResponse = await fetch(
+      `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(address)}&size=1`,
+      {
+        headers: { Authorization: `KakaoAK ${config.javascript_key.replace(/_js$/, '')}` }
+      }
+    );
+    
+    if (keywordResponse.ok) {
+      const keywordData = await keywordResponse.json();
+      if (keywordData.documents && keywordData.documents.length > 0) {
+        return {
+          lat: parseFloat(keywordData.documents[0].y),
+          lng: parseFloat(keywordData.documents[0].x)
+        };
+      }
+    }
+    
+    return defaultCoords;
+  } catch (error) {
+    return defaultCoords;
+  }
+}
+
+// 추천 장소 마커 표시
+function renderChatRecommendMarkers(places) {
+  if (!chatRecommendMap || !window.kakao?.maps) return;
+  
+  // 기존 마커 제거 (중심 제외)
+  chatRecommendMarkers.slice(1).forEach(m => m.setMap(null));
+  chatRecommendInfoWindows.slice(1).forEach(i => i.close());
+  chatRecommendMarkers = [chatRecommendMarkers[0]];
+  chatRecommendInfoWindows = [chatRecommendInfoWindows[0]];
+  
+  const bounds = new window.kakao.maps.LatLngBounds();
+  if (chatRecommendMarkers[0]) {
+    bounds.extend(chatRecommendMarkers[0].getPosition());
+  }
+  
+  places.forEach((place, index) => {
+    const position = new window.kakao.maps.LatLng(place.latitude, place.longitude);
+    
+    const markerImage = new window.kakao.maps.MarkerImage(
+      `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40"><path d="M16 0C7.16 0 0 7.16 0 16c0 11 16 24 16 24s16-13 16-24C32 7.16 24.84 0 16 0z" fill="#6366f1"/><circle cx="16" cy="16" r="8" fill="white"/><text x="16" y="21" text-anchor="middle" font-size="12" font-weight="800" fill="#6366f1">${index + 1}</text></svg>`)}`,
+      new window.kakao.maps.Size(32, 40),
+      { offset: new window.kakao.maps.Point(16, 40) }
+    );
+    
+    const marker = new window.kakao.maps.Marker({
+      position,
+      image: markerImage,
+      map: chatRecommendMap
+    });
+    
+    const infoWindow = new window.kakao.maps.InfoWindow({
+      content: `<div class="map-infowindow"><strong>${place.place_name}</strong></div>`,
+    });
+    
+    window.kakao.maps.event.addListener(marker, "click", () => {
+      selectPlaceCard(index);
+    });
+    
+    chatRecommendMarkers.push(marker);
+    chatRecommendInfoWindows.push(infoWindow);
+    bounds.extend(position);
+  });
+  
+  if (places.length > 0) {
+    chatRecommendMap.setBounds(bounds, 40, 40, 40, 40);
+    setTimeout(() => {
+      if (chatRecommendMap) {
+        chatRecommendMap.relayout();
+        chatRecommendMap.setBounds(bounds, 40, 40, 40, 40);
+      }
+    }, 300);
+  }
+}
+
+// 추천 리스트 렌더링
+function renderChatRecommendList(places) {
+  if (!places || places.length === 0) {
+    chatRecommendList.innerHTML = '<div class="recommend-placeholder">추천할 장소가 없습니다.</div>';
+    return;
+  }
+  
+  chatRecommendList.innerHTML = places.map((place, index) => `
+    <article class="chat-place-card ${index === 0 ? 'selected' : ''}" data-place-index="${index}">
+      <div class="place-num">${index + 1}</div>
+      <div class="place-info">
+        <strong class="place-name">${place.place_name}</strong>
+        <span class="place-address">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a7 7 0 0 1 7 7c0 5.25-7 13-7 13S5 14.25 5 9a7 7 0 0 1 7-7z"/>
+            <circle cx="12" cy="9" r="2.5"/>
+          </svg>
+          ${place.address}
+        </span>
+        <p class="place-desc">${place.description}</p>
+        ${place.features?.length ? `
+          <div class="place-features">
+            ${place.features.map(f => `<span class="place-feature">${f}</span>`).join('')}
+          </div>
+        ` : ''}
+        <div class="card-actions">
+          <button type="button" class="card-action-btn share" onclick="sharePlaceToChat(${index})">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+              <polyline points="16 6 12 2 8 6"/>
+              <line x1="12" y1="2" x2="12" y2="15"/>
+            </svg>
+            채팅방에 공유
+          </button>
+          <button type="button" class="card-action-btn confirm" onclick="confirmPlace(${index})">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            이 장소로 지정
+          </button>
+        </div>
+      </div>
+    </article>
+  `).join("");
+  
+  // 카드 클릭 이벤트
+  chatRecommendList.querySelectorAll("[data-place-index]").forEach(card => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".card-action-btn")) return;
+      const index = Number(card.dataset.placeIndex);
+      selectPlaceCard(index);
+    });
+  });
+}
+
+// 장소 카드 선택
+function selectPlaceCard(index) {
+  chatRecommendList.querySelectorAll(".chat-place-card").forEach(c => c.classList.remove("selected"));
+  const card = chatRecommendList.querySelector(`[data-place-index="${index}"]`);
+  if (card) card.classList.add("selected");
+  
+  const place = chatRecommendPlaces[index];
+  if (place && chatRecommendMap) {
+    const position = new window.kakao.maps.LatLng(place.latitude, place.longitude);
+    chatRecommendMap.panTo(position);
+    chatRecommendMap.setLevel(4);
+    
+    if (chatRecommendInfoWindows[index + 1]) {
+      chatRecommendInfoWindows[index + 1].open(chatRecommendMap, chatRecommendMarkers[index + 1]);
+    }
+  }
+}
+
+// 장소를 채팅방에 공유
+async function sharePlaceToChat(index) {
+  const place = chatRecommendPlaces[index];
+  if (!place || !activeRoomId) return;
+  
+  const message = `[AI 추천 장소] ${place.place_name} (${place.address})`;
+  
+  // 웹소켓으로 메시지 전송
+  if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+    chatSocket.send(JSON.stringify({ 
+      content: message,
+      type: "ai_recommend",
+      place_data: place
+    }));
+    
+    // 로컬에도 즉시 표시
+    addChatMessage(currentUser?.name || "나", message, true, "ai-recommend", place);
+    
+    closeAiRecommendModalFn();
+  } else {
+    showAppAlert("채팅 연결이 끊어졌습니다. 다시 시도해주세요.", "오류", "⚠️");
+  }
+}
+
+// 공통 alert 모달
+function showAppAlert(message, title = "알림", icon = "ℹ️") {
+  return new Promise((resolve) => {
+    const modal = document.querySelector("#appAlertModal");
+    const titleEl = document.querySelector("#appAlertTitle");
+    const messageEl = document.querySelector("#appAlertMessage");
+    const iconEl = document.querySelector(".app-alert-icon");
+    const okBtn = document.querySelector("#appAlertOk");
+    
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    iconEl.textContent = icon;
+    
+    modal.style.display = "flex";
+    
+    const handleOk = () => {
+      modal.style.display = "none";
+      okBtn.removeEventListener("click", handleOk);
+      resolve();
+    };
+    
+    okBtn.addEventListener("click", handleOk);
+  });
+}
+
+// 장소 확정 - 커스텀 모달 사용
+function showPlaceConfirmModal(placeName, onConfirm) {
+  const modal = document.querySelector("#placeConfirmModal");
+  const title = document.querySelector("#placeConfirmTitle");
+  const message = document.querySelector("#placeConfirmMessage");
+  const cancelBtn = document.querySelector("#placeConfirmCancel");
+  const okBtn = document.querySelector("#placeConfirmOk");
+  
+  title.textContent = `[${placeName}]을(를)`;
+  message.textContent = "모임 장소로 확정하시겠습니까?";
+  
+  modal.style.display = "flex";
+  
+  const handleCancel = () => {
+    modal.style.display = "none";
+    cancelBtn.removeEventListener("click", handleCancel);
+    okBtn.removeEventListener("click", handleOk);
+  };
+  
+  const handleOk = () => {
+    modal.style.display = "none";
+    cancelBtn.removeEventListener("click", handleCancel);
+    okBtn.removeEventListener("click", handleOk);
+    onConfirm();
+  };
+  
+  cancelBtn.addEventListener("click", handleCancel);
+  okBtn.addEventListener("click", handleOk);
+}
+
+// 장소 확정
+async function confirmPlace(index) {
+  const place = chatRecommendPlaces[index];
+  if (!place || !activeRoomId) return;
+  
+  showPlaceConfirmModal(place.place_name, async () => {
+    try {
+      const result = await api(`/api/meetings/${activeRoomId}/confirm-place`, {
+        method: "POST",
+        body: JSON.stringify({
+          place_name: place.place_name,
+          address: place.address,
+        }),
+      });
+      
+      // 성공 메시지 채팅방에 전송
+      const confirmMessage = `모임 장소가 [${place.place_name}]으로 최종 확정되었습니다.`;
+      
+      if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+        chatSocket.send(JSON.stringify({ 
+          content: confirmMessage,
+          type: "place_confirmed",
+          place_data: place
+        }));
+        
+        addChatMessage("시스템", confirmMessage, false, "system-message");
+      }
+      
+      closeAiRecommendModalFn();
+      
+    } catch (error) {
+      showAppAlert("장소 확정에 실패했습니다: " + error.message, "오류", "❌");
+    }
+  });
+}
+
+// 지도 정리
+function clearChatRecommendMap() {
+  chatRecommendMarkers.forEach(m => m.setMap && m.setMap(null));
+  chatRecommendInfoWindows.forEach(i => i.close && i.close());
+  chatRecommendMarkers = [];
+  chatRecommendInfoWindows = [];
+  chatRecommendMap = null;
+}
+
+// 채팅 메시지 추가 함수 확장 (시간 포함)
+const originalAddChatMessage = addChatMessage;
+addChatMessage = function(sender, content, mine = false, type = "", placeData = null, time = null) {
+  const bubble = document.createElement("div");
+  bubble.className = `chat-bubble ${mine ? "mine" : ""} ${type}`;
+  const timeStr = time ? formatTime(time) : formatTime(new Date());
+  
+  if (type === "ai-recommend" && placeData) {
+    bubble.innerHTML = `
+      <div class="ai-badge">🤖 AI 추천</div>
+      <strong>${sender}</strong>
+      <div class="place-share-card">
+        <div class="place-name">${placeData.place_name}</div>
+        <div class="place-address">${placeData.address}</div>
+        <div class="confirm-hint">이 장소로 지정하려면 메시지를 길게 눌러주세요.</div>
+      </div>
+      <span class="chat-time">${timeStr}</span>
+    `;
+    
+    // 장소 확정 버튼 기능 추가
+    bubble.addEventListener("dblclick", () => {
+      confirmPlaceByData(placeData);
+    });
+  } else if (type === "system-message") {
+    bubble.innerHTML = `<p>${content}</p><span class="chat-time">${timeStr}</span>`;
+  } else {
+    bubble.innerHTML = `<strong>${sender}</strong><p>${content}</p><span class="chat-time">${timeStr}</span>`;
+  }
+  
+  chatMessages.appendChild(bubble);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+};
+
+// 장소 데이터로 확정
+async function confirmPlaceByData(placeData) {
+  if (!activeRoomId || !placeData) return;
+  
+  if (!confirm(`[${placeData.place_name}]을(를) 모임 장소로 확정하시겠습니까?`)) return;
+  
+  try {
+    const result = await api(`/api/meetings/${activeRoomId}/confirm-place`, {
+      method: "POST",
+      body: JSON.stringify({
+        place_name: placeData.place_name,
+        address: placeData.address,
+      }),
+    });
+    
+    const confirmMessage = `모임 장소가 [${placeData.place_name}]으로 최종 확정되었습니다.`;
+    
+    if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+      chatSocket.send(JSON.stringify({ 
+        content: confirmMessage,
+        type: "place_confirmed"
+      }));
+      
+      addChatMessage("시스템", confirmMessage, false, "system-message");
+    }
+    
+    alert(result.message);
+    
+  } catch (error) {
+    alert("장소 확정에 실패했습니다: " + error.message);
+  }
+}
+
+// 글로벌 함수 등록 (HTML onclick에서 사용)
+window.sharePlaceToChat = sharePlaceToChat;
+window.confirmPlace = confirmPlace;

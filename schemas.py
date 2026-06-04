@@ -70,7 +70,7 @@ class PlaceRecommendationRequest(BaseModel):
     keywords: list[str] = Field(default_factory=list, max_length=12)
     user_location: str | None = Field(default=None, max_length=80)
     user_interests: list[str] = Field(default_factory=list, max_length=10)
-    limit: int = Field(default=10, ge=1, le=15)
+    limit: int = Field(default=7, ge=5, le=10)
 
 
 class PlaceRecommendationOut(BaseModel):

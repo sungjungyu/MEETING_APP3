@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import random
 import re
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -82,22 +83,20 @@ def _build_user_prompt(payload: PlaceRecommendationRequest) -> str:
 
 def _build_curation_prompt(payload: PlaceRecommendationRequest, kakao_places_data: list[dict]) -> str:
     keywords = ", ".join(k.strip() for k in payload.keywords if k.strip()) or "없음"
-    user_location = payload.user_location or "미설정"
-    user_interests = ", ".join(i.strip() for i in payload.user_interests if i.strip()) or "없음"
+    meeting_location = payload.user_location or "미설정"
     kakao_json = json.dumps(kakao_places_data, ensure_ascii=False, indent=2)
     return f"""당신은 모임 장소 추천 전문가입니다.
 
 아래는 카카오맵 API로 검색된 실제 장소 목록입니다.
-사용자의 지역과 관심사, 모임 종류를 종합적으로 고려하여 가장 적합한 장소 {payload.limit}개를 선별하고 추천 이유를 작성해주세요.
-
-사용자 프로필:
-- 선호 지역: {user_location}
-- 관심 분야: {user_interests}
+이 모임은 {payload.category} 목적으로 만나는 모임이며, 주요 활동 지역은 {meeting_location}입니다.
+이 모임의 성격(예: 스터디모임이면 공부하기 좋은 조용한 카페, 친목모임이면 맛집 등)에 꼭 맞고,
+해당 지역 내에 위치한 최적의 장소들을 5개에서 10개 사이로 선별하여 추천 이유를 작성해주세요.
 
 모임 정보:
 - 제목: {payload.title}
 - 카테고리: {payload.category}
 - 설명: {payload.description}
+- 활동 지역: {meeting_location}
 - 키워드: {keywords}
 
 카카오맵 검색 결과:
@@ -203,13 +202,14 @@ def _request_gemini_curated_places(
                 model=model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    temperature=0.3,
+                    temperature=0.8,
                     response_mime_type="application/json",
                 ),
             )
             raw = response.text or ""
             parsed = _normalize_curated_response(_parse_gemini_json(raw))
-            return parsed.places[: payload.limit]
+            # AI에게 더 많은 후보를 요청 (필터링/중복 제거 대비)
+            return parsed.places[: payload.limit * 3]
         except json.JSONDecodeError as exc:
             last_json_error = exc
             logger.exception("Gemini returned invalid JSON from model %s", model)
@@ -331,25 +331,34 @@ CATEGORY_QUERY_HINTS: dict[str, list[str]] = {
 }
 
 
+def _extract_general_region(location: str) -> str:
+    """구체적 주소에서 시/구/동 수준의 큰 지역만 추출"""
+    if not location:
+        return ""
+    
+    # 한국 주소 패턴: "서울 강남구 역삼동..." 또는 "대전 서구 토즈..."
+    # 첫 2-3개 단어만 추출 (시/구/동)
+    parts = location.strip().split()
+    if len(parts) >= 2:
+        # "서울 강남구" 또는 "대전 서구" 형태로 반환
+        return f"{parts[0]} {parts[1]}"
+    return location.strip()
+
+
 def _build_search_queries(payload: PlaceRecommendationRequest) -> list[str]:
-    region = (payload.user_location or "").strip()
+    """모임 카테고리와 지역을 기반으로 카카오 검색 쿼리 생성"""
+    raw_location = (payload.user_location or "").strip()
+    region = _extract_general_region(raw_location)  # 시/구까지만 추출
     category = (payload.category or "").strip()
     hints = CATEGORY_QUERY_HINTS.get(category, [category or "모임공간"])
-    interests = [i.strip() for i in payload.user_interests if i.strip()][:2]  # 상위 2개 관심사
 
     queries: list[str] = []
-    # 지역 + 카테고리 기반 쿼리
+    # 지역 + 카테고리 기반 쿼리 (핵심 검색)
     for hint in hints:
         if region:
             queries.append(f"{region} {hint}")
         else:
             queries.append(hint)
-    # 지역 + 관심사 기반 쿼리 (관심사가 있으면)
-    for interest in interests:
-        if region:
-            queries.append(f"{region} {interest}")
-        else:
-            queries.append(interest)
     # 키워드 기반 보조 쿼리
     for kw in payload.keywords[:2]:
         kw = kw.strip()
@@ -378,7 +387,7 @@ def _collect_kakao_places(payload: PlaceRecommendationRequest) -> list[dict]:
         try:
             data = _request_kakao_json(
                 "/v2/local/search/keyword.json",
-                {"query": query, "size": 10},
+                {"query": query, "size": 15},
             )
         except HTTPException:
             logger.exception("Kakao keyword search failed for query: %s", query)
@@ -400,8 +409,10 @@ def _collect_kakao_places(payload: PlaceRecommendationRequest) -> list[dict]:
                     "lng": float(doc.get("x") or 0) or None,
                 }
             )
-    # lat/lng 없는 항목 제거
-    return [p for p in collected if p["lat"] and p["lng"]][:40]
+    # lat/lng 없는 항목 제거 후 랜덤 셔플
+    valid_places = [p for p in collected if p["lat"] and p["lng"]]
+    random.shuffle(valid_places)
+    return valid_places[:50]
 
 
 async def collect_kakao_places(payload: PlaceRecommendationRequest) -> list[dict]:
@@ -432,12 +443,15 @@ async def recommend_places(payload: PlaceRecommendationRequest) -> list[PlaceRec
 
     curated = await curate_places_with_ai(payload, compact_for_ai)
 
+    # AI 결과 랜덤하게 섞기 (새로고침 시 다양한 추천)
+    random.shuffle(curated)
+
     # 카카오 데이터로 좌표/주소를 보강 (Gemini가 잘못 옮겨 적었을 가능성 방지)
     kakao_by_id: dict[str, dict] = {p["kakao_id"]: p for p in kakao_places}
 
     results: list[PlaceRecommendationOut] = []
     seen_ids: set[str] = set()
-    for item in curated:
+    for item in curated[: payload.limit * 2]:
         source = kakao_by_id.get(item.kakao_id)
         if not source:
             # Gemini가 만들어낸 ID는 좌표 검증
@@ -472,9 +486,118 @@ async def recommend_places(payload: PlaceRecommendationRequest) -> list[PlaceRec
             status_code=status.HTTP_404_NOT_FOUND,
             detail="추천 가능한 장소를 찾지 못했습니다. 키워드를 더 구체적으로 입력해 주세요.",
         )
-    return results
+    
+    # 최종 결과도 랜덤하게 섞고 limit 적용
+    random.shuffle(results)
+    return results[:payload.limit]
 
 
 @router.get("/map-config", response_model=KakaoMapConfigOut)
 async def kakao_map_config() -> KakaoMapConfigOut:
     return KakaoMapConfigOut(javascript_key=settings.kakao_javascript_key)
+
+
+# ============================================
+# 채팅방용 AI 장소 추천 API (추가)
+# ============================================
+
+class ChatRoomPlaceRecommendationRequest(BaseModel):
+    meeting_id: int
+    meeting_title: str = Field(min_length=2, max_length=120)
+    meeting_category: str = Field(min_length=2, max_length=50)
+    meeting_description: str = Field(min_length=5)
+    meeting_location: str = Field(min_length=2, max_length=120)
+    keywords: list[str] = Field(default_factory=list, max_length=12)
+    limit: int = Field(default=7, ge=5, le=10)
+
+
+@router.post("/chatroom-recommend", response_model=list[PlaceRecommendationOut])
+async def recommend_places_for_chatroom(
+    payload: ChatRoomPlaceRecommendationRequest,
+) -> list[PlaceRecommendationOut]:
+    """채팅방용 AI 장소 추천 API - 모임 카테고리와 지역 기반"""
+    
+    # PlaceRecommendationRequest로 변환
+    search_payload = PlaceRecommendationRequest(
+        title=payload.meeting_title,
+        category=payload.meeting_category,
+        description=payload.meeting_description,
+        keywords=payload.keywords,
+        user_location=payload.meeting_location,
+        user_interests=[],  # 사용자 관심사 제외
+        limit=payload.limit,
+    )
+    
+    # 카카오 장소 검색 (카테고리 + 지역 기반)
+    kakao_places = await collect_kakao_places(search_payload)
+    
+    if not kakao_places:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="카카오맵에서 적합한 장소를 찾지 못했습니다.",
+        )
+    
+    # Gemini 큐레이션
+    compact_for_ai = [
+        {
+            "kakao_id": p["kakao_id"],
+            "name": p["name"],
+            "address": p["address"],
+            "category": p["category"],
+            "lat": round(p["lat"], 6),
+            "lng": round(p["lng"], 6),
+        }
+        for p in kakao_places
+    ]
+    
+    curated = await curate_places_with_ai(search_payload, compact_for_ai)
+    
+    # AI 결과 랜덤하게 섞기
+    random.shuffle(curated)
+    
+    # 결과 조합
+    kakao_by_id: dict[str, dict] = {p["kakao_id"]: p for p in kakao_places}
+    
+    results: list[PlaceRecommendationOut] = []
+    seen_ids: set[str] = set()
+    
+    for item in curated[: payload.limit * 2]:
+        source = kakao_by_id.get(item.kakao_id)
+        if not source:
+            if not (item.lat and item.lng):
+                continue
+            lat, lng, address, name = item.lat, item.lng, item.address, item.name
+            kakao_id = item.kakao_id or None
+        else:
+            lat = source["lat"]
+            lng = source["lng"]
+            address = source["address"] or item.address
+            name = source["name"] or item.name
+            kakao_id = source["kakao_id"]
+        
+        if kakao_id and kakao_id in seen_ids:
+            continue
+        if kakao_id:
+            seen_ids.add(kakao_id)
+        
+        results.append(
+            PlaceRecommendationOut(
+                kakao_id=kakao_id,
+                place_name=name,
+                address=address,
+                latitude=lat,
+                longitude=lng,
+                description=item.reason,
+                features=item.features,
+            )
+        )
+    
+    if not results:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="추천 가능한 장소를 찾지 못했습니다.",
+        )
+    
+    # 최종 결과도 랜덤하게 섞고 limit 적용
+    random.shuffle(results)
+    return results[:payload.limit]

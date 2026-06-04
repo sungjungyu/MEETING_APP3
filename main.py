@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -810,3 +811,111 @@ async def meeting_chat(websocket: WebSocket, meeting_id: int) -> None:
                 )
     except WebSocketDisconnect:
         manager.disconnect(meeting_id, websocket)
+
+
+# ============================================
+# 채팅방용 AI 장소 추천 및 장소 확정 API
+# ============================================
+
+class ChatRoomPlaceRecommendationRequest(BaseModel):
+    meeting_id: int
+    meeting_title: str = Field(min_length=2, max_length=120)
+    meeting_category: str = Field(min_length=2, max_length=50)
+    meeting_description: str = Field(min_length=5)
+    meeting_location: str = Field(min_length=2, max_length=120)
+    keywords: list[str] = Field(default_factory=list, max_length=12)
+    limit: int = Field(default=5, ge=1, le=10)
+
+
+class PlaceConfirmRequest(BaseModel):
+    place_name: str = Field(min_length=2, max_length=120)
+    address: str = Field(min_length=5)
+
+
+
+
+@app.post("/api/meetings/{meeting_id}/confirm-place")
+async def confirm_meeting_place(
+    meeting_id: int,
+    payload: PlaceConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """모임 장소 확정 API - Meeting.location 업데이트"""
+    # 모임 조회
+    meeting = await db.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="모임을 찾을 수 없습니다.",
+        )
+    
+    # 권한 확인 (모임장 또는 멤버)
+    is_owner = meeting.owner_id == current_user.id
+    membership = await db.execute(
+        select(MeetingApplication)
+        .where(
+            MeetingApplication.meeting_id == meeting_id,
+            MeetingApplication.user_id == current_user.id,
+            MeetingApplication.status == "approved",
+        )
+    )
+    is_member = membership.scalar_one_or_none() is not None
+    
+    if not (is_owner or is_member):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="해당 모임의 멤버만 장소를 확정할 수 있습니다.",
+        )
+    
+    # 장소 업데이트
+    meeting.location = f"{payload.place_name} ({payload.address})"
+    await db.commit()
+    
+    return {
+        "success": True,
+        "meeting_id": meeting_id,
+        "confirmed_place": payload.place_name,
+        "address": payload.address,
+        "message": f"모임 장소가 [{payload.place_name}]으로 확정되었습니다.",
+    }
+
+
+@app.get("/api/meetings/{meeting_id}/info")
+async def get_meeting_info_for_chat(
+    meeting_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """채팅방용 모임 정보 조회 API"""
+    # 멤버십 확인
+    membership = await db.execute(
+        select(MeetingApplication)
+        .where(
+            MeetingApplication.meeting_id == meeting_id,
+            MeetingApplication.user_id == current_user.id,
+            MeetingApplication.status == "approved",
+        )
+    )
+    if not membership.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="해당 모임의 멤버만 접근할 수 있습니다.",
+        )
+    
+    meeting = await db.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="모임을 찾을 수 없습니다.",
+        )
+    
+    return {
+        "id": meeting.id,
+        "title": meeting.title,
+        "category": meeting.category,
+        "description": meeting.description,
+        "location": meeting.location,
+        "max_members": meeting.max_members,
+        "keywords": [],  # 필요시 keywords 필드 추가
+    }
