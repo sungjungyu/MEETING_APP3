@@ -1831,9 +1831,7 @@ renderCalendarGrid();
 
 document.querySelector("#backButton").style.visibility = "hidden";
 
-// ============================================
-// 채팅방 AI 장소 추천 기능
-// ============================================
+// 채팅방 장소 추천
 
 let chatRecommendMap = null;
 let chatRecommendMarkers = [];
@@ -1851,7 +1849,7 @@ const chatPlusButton = document.querySelector("#chatPlusButton");
 const chatPlusMenu = document.querySelector("#chatPlusMenu");
 const plusMenuRecommend = document.querySelector("#plusMenuRecommend");
 
-// AI 추천 버튼 클릭
+// 장소 추천 버튼 클릭
 aiRecommendButton?.addEventListener("click", () => {
   openAiRecommendModal();
 });
@@ -1861,7 +1859,7 @@ chatPlusButton?.addEventListener("click", () => {
   chatPlusMenu.style.display = chatPlusMenu.style.display === "none" ? "block" : "none";
 });
 
-// + 메뉴 - AI 추천 클릭
+// + 메뉴 - 장소 추천 클릭
 plusMenuRecommend?.addEventListener("click", () => {
   chatPlusMenu.style.display = "none";
   openAiRecommendModal();
@@ -1912,7 +1910,7 @@ async function loadMeetingInfo() {
   }
 }
 
-// AI 추천 로드
+// 장소 추천 로드
 async function loadAiRecommendations() {
   if (!currentMeetingInfo) {
     chatRecommendList.innerHTML = '<div class="recommend-placeholder">모임 정보를 불러올 수 없습니다.</div>';
@@ -2330,7 +2328,7 @@ addChatMessage = function(sender, content, mine = false, type = "", placeData = 
       <span class="chat-time">${timeStr}</span>
     `;
     
-    // 장소 확정 버튼 기능 추가
+    // 장소 확정 버튼
     bubble.addEventListener("dblclick", () => {
       confirmPlaceByData(placeData);
     });

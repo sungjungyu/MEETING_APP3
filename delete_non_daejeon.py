@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-대전광역시 서구가 아닌 모임글/게시글 삭제 스크립트
-"""
+"""대전 서구 외 모임글/게시글 삭제 스크립트"""
 import asyncio
 import sys
 
@@ -14,13 +12,13 @@ from models import Meeting, BoardPost, MeetingApplication, ChatMessage, MeetingS
 
 
 async def delete_non_daejeon_meetings():
-    """대전 서구가 아닌 모든 모임글 삭제"""
+    """대전 서구 외 모임글 삭제"""
     print("=" * 60)
     print("🗑️  대전광역시 서구가 아닌 모임글 삭제")
     print("=" * 60)
     
     async with AsyncSessionLocal() as session:
-        # 대전 서구 모임 ID 조회 (보존할 모임)
+        # 대전 서구 모임 ID 조회
         result = await session.execute(
             select(Meeting.id).where(
                 and_(
@@ -49,7 +47,7 @@ async def delete_non_daejeon_meetings():
             print("\n✅ 삭제할 모임이 없습니다.")
             return
         
-        # 관련 데이터 통계
+        # 연관 데이터 개수 확인
         result = await session.execute(
             select(BoardPost).where(BoardPost.meeting_id.in_(delete_ids))
         )
@@ -75,7 +73,7 @@ async def delete_non_daejeon_meetings():
         print(f"  - 연관 메시지: {messages_count}개")
         print(f"  - 연관 일정: {schedules_count}개")
         
-        # 삭제 실행 (CASCADE로 인해 연관 데이터도 자동 삭제됨)
+        # CASCADE로 연관 데이터도 함께 삭제
         print(f"\n🗑️  모임 삭제 중...")
         await session.execute(
             delete(Meeting).where(Meeting.id.in_(delete_ids))
@@ -87,7 +85,7 @@ async def delete_non_daejeon_meetings():
 
 
 async def show_all_meetings():
-    """현재 모든 모임글 목록 표시"""
+    """현재 모임 목록 출력"""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Meeting).options(selectinload(Meeting.owner))
@@ -106,7 +104,7 @@ async def show_all_meetings():
 
 
 async def main():
-    # 현재 목록 표시
+    # 현재 목록 출력
     await show_all_meetings()
     
     # 바로 삭제 실행
@@ -119,7 +117,7 @@ async def main():
     # 삭제 실행
     await delete_non_daejeon_meetings()
     
-    # 삭제 후 목록 표시
+    # 삭제 후 목록 출력
     await show_all_meetings()
 
 

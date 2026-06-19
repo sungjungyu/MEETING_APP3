@@ -20,7 +20,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=6)
     name: str = Field(min_length=2, max_length=80)
     bio: str | None = None
-    interests: list[dict] = []  # 프론트엔드에서 {name: "..."} 형식으로 보냄
+    interests: list[dict] = []  # 프론트에서 {name: ...} 형식으로 받음
 
 
 class UserLogin(BaseModel):
@@ -51,7 +51,7 @@ class MeetingUpdate(BaseModel):
 class UserUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=80)
     bio: str | None = None
-    interests: list[dict] | None = None  # 프론트엔드에서 {name: "..."} 형식으로 보냄
+    interests: list[dict] | None = None  # 프론트에서 {name: ...} 형식으로 받음
 
 
 class MeetingCreate(BaseModel):

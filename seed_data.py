@@ -1,12 +1,4 @@
-"""
-시연용 데이터 생성 스크립트
-대전광역시 서구 기반 모임 데이터 생성
-
-사용법:
-    1. 서버 실행: uvicorn main:app --reload
-    2. 브라우저: http://localhost:8000/api/seed-daejeon
-    3. 또는: python seed_data_simple.py
-"""
+"""대전 서구 데모용 데이터 생성 스크립트"""
 
 import random
 from datetime import datetime, timedelta
@@ -16,7 +8,7 @@ from database import hash_password
 from models import User, Meeting, MeetingApplication, BoardPost, Interest, MeetingSchedule
 
 
-# 대전 서구 기반 모임 데이터
+# 대전 서구 모임 데이터
 DAEJEON_SEOGU_MEETINGS = [
     {
         "title": "둔산동 카페 투어 ☕️",
@@ -160,7 +152,7 @@ DAEJEON_SEOGU_MEETINGS = [
     },
 ]
 
-# 테스트 유저 데이터
+# 테스트 유저
 TEST_USERS = [
     {
         "name": "김대전",
@@ -206,10 +198,10 @@ TEST_USERS = [
 
 
 async def seed_daejeon_data(session: AsyncSession) -> None:
-    """대전 서구 시연 데이터 생성 - 단순화 버전"""
+    """대전 서구 데모 데이터 생성"""
     from database import get_or_create_interests
     
-    # 기존 모임 수 확인
+    # 기존 모임 개수 확인
     result = await session.execute(select(func.count(Meeting.id)))
     meeting_count = int(result.scalar_one() or 0)
     if meeting_count > 20:
@@ -220,7 +212,7 @@ async def seed_daejeon_data(session: AsyncSession) -> None:
     print("🌟 대전광역시 서구 시연 데이터 생성")
     print("=" * 50)
     
-    # 1. 테스트 유저 생성
+    # 테스트 유저 생성
     print("\n📌 테스트 유저 생성 중...")
     users = []
     for user_data in TEST_USERS:
@@ -254,7 +246,7 @@ async def seed_daejeon_data(session: AsyncSession) -> None:
         result = await session.execute(select(User).limit(5))
         users = result.scalars().all()
     
-    # 2. 대전 서구 모임 생성
+    # 대전 서구 모임 생성
     print("\n📌 대전 서구 모임 생성 중...")
     now = datetime.utcnow()
     
@@ -312,7 +304,7 @@ async def seed_daejeon_data(session: AsyncSession) -> None:
     
     await session.commit()
     
-    # 3. 게시글 생성
+    # 게시글 생성
     print("\n📌 게시글 생성 중...")
     posts_data = [
         {"title": "대전 서구 추천 카페 모음 🗺️", "content": "둔산동: 카페 봄봄, 카페 미뉴트\n탄방동: 블랙업, 테라로사\n월평동: 로우키, 네스트\n\n다들 아는 곳 있으면 댓글로 공유해주세요!"},
@@ -347,7 +339,7 @@ async def seed_daejeon_data(session: AsyncSession) -> None:
 
 
 async def main():
-    """메인 실행 함수 - 서버가 실행 중일 때 API 호출"""
+    """직접 실행 시 안내 메시지 출력"""
     import asyncio
     import sys
     print("=" * 60)

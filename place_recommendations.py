@@ -208,7 +208,7 @@ def _request_gemini_curated_places(
             )
             raw = response.text or ""
             parsed = _normalize_curated_response(_parse_gemini_json(raw))
-            # AI에게 더 많은 후보를 요청 (필터링/중복 제거 대비)
+            # 후보 여유분 확보
             return parsed.places[: payload.limit * 3]
         except json.JSONDecodeError as exc:
             last_json_error = exc
@@ -313,7 +313,7 @@ def _request_kakao_json(path: str, params: dict[str, str | int]) -> dict:
         ) from exc
 
 
-# 카테고리별 카카오 검색 보조 키워드
+# 카테고리별 카카오 검색 키워드
 CATEGORY_QUERY_HINTS: dict[str, list[str]] = {
     "스터디": ["스터디카페", "스터디룸", "카페"],
     "운동": ["헬스장", "체육관", "필라테스", "클라이밍"],
@@ -332,34 +332,31 @@ CATEGORY_QUERY_HINTS: dict[str, list[str]] = {
 
 
 def _extract_general_region(location: str) -> str:
-    """구체적 주소에서 시/구/동 수준의 큰 지역만 추출"""
+    """주소에서 시/구까지만 추출"""
     if not location:
         return ""
     
-    # 한국 주소 패턴: "서울 강남구 역삼동..." 또는 "대전 서구 토즈..."
-    # 첫 2-3개 단어만 추출 (시/구/동)
     parts = location.strip().split()
     if len(parts) >= 2:
-        # "서울 강남구" 또는 "대전 서구" 형태로 반환
         return f"{parts[0]} {parts[1]}"
     return location.strip()
 
 
 def _build_search_queries(payload: PlaceRecommendationRequest) -> list[str]:
-    """모임 카테고리와 지역을 기반으로 카카오 검색 쿼리 생성"""
+    """카테고리와 지역으로 카카오 검색 쿼리를 만든다"""
     raw_location = (payload.user_location or "").strip()
     region = _extract_general_region(raw_location)  # 시/구까지만 추출
     category = (payload.category or "").strip()
     hints = CATEGORY_QUERY_HINTS.get(category, [category or "모임공간"])
 
     queries: list[str] = []
-    # 지역 + 카테고리 기반 쿼리 (핵심 검색)
+    # 기본: 지역 + 카테고리
     for hint in hints:
         if region:
             queries.append(f"{region} {hint}")
         else:
             queries.append(hint)
-    # 키워드 기반 보조 쿼리
+    # 보조: 키워드
     for kw in payload.keywords[:2]:
         kw = kw.strip()
         if not kw:
@@ -368,7 +365,7 @@ def _build_search_queries(payload: PlaceRecommendationRequest) -> list[str]:
             queries.append(f"{region} {kw}")
         else:
             queries.append(kw)
-    # 중복 제거하면서 순서 유지
+    # 중복 제거 (순서 유지)
     seen: set[str] = set()
     unique: list[str] = []
     for q in queries:
@@ -379,7 +376,7 @@ def _build_search_queries(payload: PlaceRecommendationRequest) -> list[str]:
 
 
 def _collect_kakao_places(payload: PlaceRecommendationRequest) -> list[dict]:
-    """카카오 키워드 검색을 여러 번 호출해서 후보 장소들을 모은다."""
+    """카카오 키워드 검색으로 후보 장소를 모은다"""
     seen_ids: set[str] = set()
     collected: list[dict] = []
 
@@ -409,7 +406,7 @@ def _collect_kakao_places(payload: PlaceRecommendationRequest) -> list[dict]:
                     "lng": float(doc.get("x") or 0) or None,
                 }
             )
-    # lat/lng 없는 항목 제거 후 랜덤 셔플
+    # 좌표 없는 장소 제거하고 순서 섞기
     valid_places = [p for p in collected if p["lat"] and p["lng"]]
     random.shuffle(valid_places)
     return valid_places[:50]
@@ -428,7 +425,7 @@ async def recommend_places(payload: PlaceRecommendationRequest) -> list[PlaceRec
             detail="카카오맵에서 적합한 장소를 찾지 못했습니다. 지역이나 카테고리를 다시 확인해 주세요.",
         )
 
-    # Gemini에게 넘길 때는 좌표 정밀도/필드를 압축해 토큰을 아낀다.
+    # Gemini 토큰 절약용으로 좌표 소수점 자리 줄이기
     compact_for_ai = [
         {
             "kakao_id": p["kakao_id"],
@@ -443,10 +440,10 @@ async def recommend_places(payload: PlaceRecommendationRequest) -> list[PlaceRec
 
     curated = await curate_places_with_ai(payload, compact_for_ai)
 
-    # AI 결과 랜덤하게 섞기 (새로고침 시 다양한 추천)
+    # 결과 랜덤 섞기
     random.shuffle(curated)
 
-    # 카카오 데이터로 좌표/주소를 보강 (Gemini가 잘못 옮겨 적었을 가능성 방지)
+    # 카카오 원본 좌표/주소로 보정
     kakao_by_id: dict[str, dict] = {p["kakao_id"]: p for p in kakao_places}
 
     results: list[PlaceRecommendationOut] = []
@@ -454,7 +451,7 @@ async def recommend_places(payload: PlaceRecommendationRequest) -> list[PlaceRec
     for item in curated[: payload.limit * 2]:
         source = kakao_by_id.get(item.kakao_id)
         if not source:
-            # Gemini가 만들어낸 ID는 좌표 검증
+            # Gemini가 새로 만든 ID는 좌표 확인
             if not (item.lat and item.lng):
                 continue
             lat, lng, address, name = item.lat, item.lng, item.address, item.name
@@ -487,7 +484,7 @@ async def recommend_places(payload: PlaceRecommendationRequest) -> list[PlaceRec
             detail="추천 가능한 장소를 찾지 못했습니다. 키워드를 더 구체적으로 입력해 주세요.",
         )
     
-    # 최종 결과도 랜덤하게 섞고 limit 적용
+    # 최종 결과 섞고 limit 적용
     random.shuffle(results)
     return results[:payload.limit]
 
@@ -497,9 +494,7 @@ async def kakao_map_config() -> KakaoMapConfigOut:
     return KakaoMapConfigOut(javascript_key=settings.kakao_javascript_key)
 
 
-# ============================================
-# 채팅방용 AI 장소 추천 API (추가)
-# ============================================
+# 채팅방용 장소 추천
 
 class ChatRoomPlaceRecommendationRequest(BaseModel):
     meeting_id: int
@@ -515,9 +510,9 @@ class ChatRoomPlaceRecommendationRequest(BaseModel):
 async def recommend_places_for_chatroom(
     payload: ChatRoomPlaceRecommendationRequest,
 ) -> list[PlaceRecommendationOut]:
-    """채팅방용 AI 장소 추천 API - 모임 카테고리와 지역 기반"""
+    """채팅방용 장소 추천"""
     
-    # PlaceRecommendationRequest로 변환
+    # 검색용 형식으로 변환
     search_payload = PlaceRecommendationRequest(
         title=payload.meeting_title,
         category=payload.meeting_category,
@@ -528,7 +523,7 @@ async def recommend_places_for_chatroom(
         limit=payload.limit,
     )
     
-    # 카카오 장소 검색 (카테고리 + 지역 기반)
+    # 카카오 장소 검색
     kakao_places = await collect_kakao_places(search_payload)
     
     if not kakao_places:
@@ -552,7 +547,7 @@ async def recommend_places_for_chatroom(
     
     curated = await curate_places_with_ai(search_payload, compact_for_ai)
     
-    # AI 결과 랜덤하게 섞기
+    # 결과 랜덤 섞기
     random.shuffle(curated)
     
     # 결과 조합
@@ -598,6 +593,6 @@ async def recommend_places_for_chatroom(
             detail="추천 가능한 장소를 찾지 못했습니다.",
         )
     
-    # 최종 결과도 랜덤하게 섞고 limit 적용
+    # 최종 결과 섞고 limit 적용
     random.shuffle(results)
     return results[:payload.limit]

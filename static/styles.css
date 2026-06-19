@@ -1626,9 +1626,7 @@ textarea { min-height: 90px; resize: vertical; }
   }
 }
 
-/* ============================================
-   지역 선택 (도/시 캐스케이드)
-   ============================================ */
+/* 지역 선택 */
 
 .region-select-group {
   display: flex;
@@ -1645,9 +1643,7 @@ textarea { min-height: 90px; resize: vertical; }
   background: var(--soft);
 }
 
-/* ============================================
-   관심 분야 선택
-   ============================================ */
+/* 관심 분야 선택 */
 
 label:has(#interest1Select),
 label:has(#interest2Select),
@@ -1662,9 +1658,7 @@ label:has(#interest3Select) {
   color: var(--sub);
 }
 
-/* ============================================
-   채팅방 AI 장소 추천 UI 스타일
-   ============================================ */
+/* 채팅방 장소 추천 UI */
 
 /* 채팅방 헤더 액션 */
 .chat-head-actions {
@@ -1773,7 +1767,7 @@ label:has(#interest3Select) {
   color: var(--primary);
 }
 
-/* AI 추천 모달 - 폰 화면 내에서만 표시 */
+/* 장소 추천 모달 */
 .ai-recommend-modal {
   position: absolute;
   top: 0;
@@ -2084,7 +2078,7 @@ label:has(#interest3Select) {
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
 }
 
-/* 채팅 메시지 - AI 추천 카드 */
+/* 채팅 메시지 - 추천 카드 */
 .chat-bubble.ai-recommend {
   background: linear-gradient(135deg, var(--primary-light) 0%, #e0e7ff 100%);
   border: 1.5px solid var(--primary);
@@ -2169,9 +2163,7 @@ label:has(#interest3Select) {
   }
 }
 
-/* ============================================
-   장소 확정 컨펌 모달
-   ============================================ */
+/* 장소 확정 모달 */
 
 .place-confirm-modal {
   position: absolute;
@@ -2275,9 +2267,7 @@ label:has(#interest3Select) {
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
 }
 
-/* ============================================
-   공통 알림 모달 (alert 대체)
-   ============================================ */
+/* 공통 알림 모달 */
 
 .app-alert-modal {
   position: absolute;

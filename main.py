@@ -153,7 +153,7 @@ async def signup(payload: UserCreate, db: AsyncSession = Depends(get_db)) -> Use
         bio=payload.bio,
         hashed_password=hash_password(payload.password),
     )
-    # interests에서 name 필드 추출
+    # interests는 {name: ...} 형태로 들어옴
     interest_names = [i.get("name") for i in payload.interests if isinstance(i, dict) and i.get("name")]
     user.interests = await get_or_create_interests(db, interest_names)
     db.add(user)
@@ -187,7 +187,7 @@ async def update_me(
     if payload.bio is not None:
         current_user.bio = payload.bio
     if payload.interests is not None:
-        # interests에서 name 필드 추출
+        # interests는 {name: ...} 형태로 들어옴
         interest_names = [i.get("name") for i in payload.interests if isinstance(i, dict) and i.get("name")]
         current_user.interests = await get_or_create_interests(db, interest_names)
     await db.commit()
@@ -268,7 +268,7 @@ async def create_meeting(
     db.add(meeting)
     await db.flush()
     db.add(MeetingApplication(meeting_id=meeting.id, user_id=current_user.id, status="approved"))
-    # 모임 생성 시 자동으로 게시글 등록
+    # 모임 생성하면 게시글도 자동 등록
     post = BoardPost(
         meeting_id=meeting.id,
         author_id=current_user.id,
@@ -350,7 +350,7 @@ async def apply_to_meeting(
         .options(selectinload(MeetingApplication.user).selectinload(User.interests))
     )
     saved = result.scalar_one()
-    # 모임장에게 신청 알림
+    # 모임장에게 신청 알림 보내기
     await manager.notify(meeting.owner_id, {
         "type": "new_application",
         "message": f"{current_user.name}님이 '{meeting.title}' 모임에 참여 신청했습니다.",
@@ -418,7 +418,7 @@ async def decide_application(
     application.status = payload.status
     await db.commit()
     await db.refresh(application)
-    # 신청자에게 실시간 알림 전송
+    # 신청자에게 결과 알림 보내기
     status_label = "승인" if payload.status == "approved" else "거절"
     await manager.notify(application.user_id, {
         "type": "application",
@@ -744,7 +744,7 @@ async def list_messages(meeting_id: int, db: AsyncSession = Depends(get_db)) -> 
 
 @app.post("/api/seed-daejeon", response_model=dict)
 async def seed_daejeon_data_endpoint(db: AsyncSession = Depends(get_db)) -> dict:
-    """대전광역시 서구 시연 데이터 생성 엔드포인트 (개발/시연용)"""
+    """대전 서구 데모 데이터 생성 엔드포인트"""
     from seed_data import seed_daejeon_data
     await seed_daejeon_data(db)
     return {"message": "대전 서구 시연 데이터가 생성되었습니다."}
@@ -813,9 +813,7 @@ async def meeting_chat(websocket: WebSocket, meeting_id: int) -> None:
         manager.disconnect(meeting_id, websocket)
 
 
-# ============================================
-# 채팅방용 AI 장소 추천 및 장소 확정 API
-# ============================================
+# 채팅방용 장소 추천/확정
 
 class ChatRoomPlaceRecommendationRequest(BaseModel):
     meeting_id: int
@@ -841,7 +839,7 @@ async def confirm_meeting_place(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """모임 장소 확정 API - Meeting.location 업데이트"""
+    """모임 장소 확정하면 location 갱신"""
     # 모임 조회
     meeting = await db.get(Meeting, meeting_id)
     if not meeting:
@@ -868,7 +866,7 @@ async def confirm_meeting_place(
             detail="해당 모임의 멤버만 장소를 확정할 수 있습니다.",
         )
     
-    # 장소 업데이트
+    # 장소 확정 반영
     meeting.location = f"{payload.place_name} ({payload.address})"
     await db.commit()
     
@@ -887,7 +885,7 @@ async def get_meeting_info_for_chat(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """채팅방용 모임 정보 조회 API"""
+    """채팅방용 모임 정보 조회"""
     # 멤버십 확인
     membership = await db.execute(
         select(MeetingApplication)
@@ -917,5 +915,5 @@ async def get_meeting_info_for_chat(
         "description": meeting.description,
         "location": meeting.location,
         "max_members": meeting.max_members,
-        "keywords": [],  # 필요시 keywords 필드 추가
+        "keywords": [],  # 필요하면 keywords 추가
     }
